@@ -103,6 +103,7 @@ void shell_escape_command(string&);
 void adb_shell_escape_command(string&);
 queue<string> adb_push(const string&, const string&);
 queue<string> adb_pull(const string&, const string&);
+string adb_shell_cmd(const string&, bool);
 queue<string> adb_shell(const string&, bool);
 queue<string> shell(const string&);
 
@@ -150,6 +151,18 @@ queue<string> shell(const string& command)
     return exec_command(actual_command);
 }
 
+string adb_shell_cmd(const string& command, bool getStderr = false)
+{
+    string actual_command;
+    actual_command.assign(command);
+    //adb_shell_escape_command(actual_command);
+    // actual_command.insert(0, "adb shell \"");
+    actual_command.insert(0, "adb shell \"run-as com.Meditation.app ");
+    actual_command.append("\"");
+    if (getStderr) actual_command.append(" 2>&1");
+    return actual_command;
+}
+
 /**
    Return the result of executing the given command on the Android
    device using adb.
@@ -163,13 +176,7 @@ queue<string> shell(const string& command)
  */
 queue<string> adb_shell(const string& command, bool getStderr = false)
 {
-    string actual_command;
-    actual_command.assign(command);
-    //adb_shell_escape_command(actual_command);
-    actual_command.insert(0, "adb shell \"");
-    actual_command.append("\"");
-    if (getStderr) actual_command.append(" 2>&1");
-    return exec_command(actual_command);
+    return exec_command(adb_shell_cmd(command, getStderr));
 }
 
 /**
@@ -263,12 +270,31 @@ void makeTmpDir(void) {
 void adb_push_pull_cmd(string& cmd, const bool push,
 		       const string& local_path, const string& remote_path)
 {
-    cmd.assign("adb ");
-    cmd.append((push ? "push '" : "pull '"));
-    cmd.append((push ? local_path : remote_path));
-    cmd.append("' '");
-    cmd.append((push ? remote_path : local_path));
-    cmd.append("'");
+    string pwd;
+    pwd = adb_shell("pwd", true).front();
+
+    string path_string;
+    path_string.assign(remote_path);
+    path_string.insert(0, "/");
+    path_string.insert(0, pwd);
+
+    if(push) {
+        cmd.assign("adb push '");
+        cmd.append(local_path);
+        cmd.append("' '");
+        cmd.append(path_string);
+        cmd.append("'");
+    }
+    else {
+        string adb_cmd;
+        adb_cmd.assign("cat '");
+        adb_cmd.append(remote_path);
+        adb_cmd.append("'");
+
+        cmd.append(adb_shell_cmd(adb_cmd, false));
+        cmd.append(" > ");
+        cmd.append(local_path);
+    }
 }
 
 /**
@@ -418,6 +444,7 @@ static int adb_getattr(const char *path, struct stat *stbuf)
     queue<string> output;
     string path_string;
     path_string.assign(path);
+    path_string.insert(0, "./");
     shell_escape_path(path_string);
     // TODO /caching?
     //
@@ -583,10 +610,12 @@ static int adb_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
     string path_string;
     string local_path_string;
     path_string.assign(path);
+    path_string.insert(0, "./");
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
     path_string.assign(path);
+    path_string.insert(0, "./");
 
     shell_escape_path(path_string);
 
@@ -650,6 +679,7 @@ static int adb_open(const char *path, struct fuse_file_info *fi)
     string path_string;
     string local_path_string;
     path_string.assign(path);
+    path_string.insert(0, "./");
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
@@ -657,6 +687,7 @@ static int adb_open(const char *path, struct fuse_file_info *fi)
     string filehandle_path = local_path_string;
 
     path_string.assign(path);
+    path_string.insert(0, "./");
     shell_escape_path(path_string);
     shell_escape_path(local_path_string);
 
@@ -673,10 +704,12 @@ static int adb_open(const char *path, struct fuse_file_info *fi)
           return -ENOENT;
         }
         path_string.assign(path);
+        path_string.insert(0, "./");
         local_path_string = tempDirPath;
         string_replacer(path_string,"/","-");
         local_path_string.append(path_string);
         path_string.assign(path);
+        path_string.insert(0, "./");
         shell_escape_path(path_string);
         shell_escape_path(local_path_string);
         adb_pull(path_string,local_path_string);
@@ -709,6 +742,7 @@ static int adb_write(const char *path, const char *buf, size_t size, off_t offse
     //string path_string;
     //string local_path_string;
     //path_string.assign(path);
+    //path_string.insert(0, "./");
     //shell_escape_path(path_string);
 
     int fd = fi->fh; //open(local_path_string.c_str(), O_CREAT|O_RDWR|O_TRUNC);
@@ -729,10 +763,12 @@ static int adb_flush(const char *path, struct fuse_file_info *fi) {
     string path_string;
     string local_path_string;
     path_string.assign(path);
+    path_string.insert(0, "./");
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
     path_string.assign(path);
+    path_string.insert(0, "./");
 
     shell_escape_path(path_string);
     shell_escape_path(local_path_string);
@@ -755,10 +791,12 @@ static int adb_release(const char *path, struct fuse_file_info *fi) {
     string path_string;
     string local_path_string;
     path_string.assign(path);
+    path_string.insert(0, "./");
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
     path_string.assign(path);
+    path_string.insert(0, "./");
 
     // untouched
     int fd = fi->fh;
@@ -778,6 +816,7 @@ static int adb_access(const char *path, int mask) {
 static int adb_utimens(const char *path, const struct timespec ts[2]) {
     string path_string;
     path_string.assign(path);
+    path_string.insert(0, "./");
     fileData[path_string].timestamp = fileData[path_string].timestamp + 50;
 
     shell_escape_path(path_string);
@@ -799,11 +838,13 @@ static int adb_truncate(const char *path, off_t size) {
     string path_string;
     string local_path_string;
     path_string.assign(path);
+    path_string.insert(0, "./");
     fileData[path_string].timestamp = fileData[path_string].timestamp + 50;
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
     path_string.assign(path);
+    path_string.insert(0, "./");
     shell_escape_path(path_string);
     shell_escape_path(local_path_string);
 
@@ -833,10 +874,12 @@ static int adb_mknod(const char *path, mode_t mode, dev_t rdev) {
     string path_string;
     string local_path_string;
     path_string.assign(path);
+    path_string.insert(0, "./");
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
     path_string.assign(path);
+    path_string.insert(0, "./");
 
     cout << "mknod for " << local_path_string << "\n";
     mknod(local_path_string.c_str(),mode, rdev);
@@ -856,11 +899,13 @@ static int adb_mkdir(const char *path, mode_t mode) {
     string path_string;
     string local_path_string;
     path_string.assign(path);
+    path_string.insert(0, "./");
     fileData[path_string].timestamp = fileData[path_string].timestamp + 50;
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
     path_string.assign(path);
+    path_string.insert(0, "./");
 
     shell_escape_path(path_string);
 
@@ -909,11 +954,13 @@ static int adb_rmdir(const char *path) {
     string path_string;
     string local_path_string;
     path_string.assign(path);
+    path_string.insert(0, "./");
     fileData[path_string].timestamp = fileData[path_string].timestamp + 50;
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
     path_string.assign(path);
+    path_string.insert(0, "./");
 
     shell_escape_path(path_string);
     shell_escape_path(local_path_string);
@@ -934,11 +981,13 @@ static int adb_unlink(const char *path) {
     string path_string;
     string local_path_string;
     path_string.assign(path);
+    path_string.insert(0, "./");
     fileData[path_string].timestamp = fileData[path_string].timestamp + 50;
     local_path_string = tempDirPath;
     string_replacer(path_string,"/","-");
     local_path_string.append(path_string);
     path_string.assign(path);
+    path_string.insert(0, "./");
 
     shell_escape_path(path_string);
     shell_escape_path(local_path_string);
